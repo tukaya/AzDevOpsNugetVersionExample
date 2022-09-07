@@ -1,0 +1,61 @@
+variables: 
+  Major: 1
+  Minor: 0
+  Patch: 0
+  Version: $(Major).$(Minor).$(Patch)
+  Revision: $[counter(variables['Build.SourceBranchName'], 1)]
+  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+    VersionSuffix: ''
+  ${{ if ne( variables['Build.SourceBranchName'], 'master') }}:
+    VersionSuffix: -${{ variables['Build.SourceBranchName'] }}-$(Revision)
+  PackageVersion: ${{ variables.Version }}${{ variables.VersionSuffix }}
+
+name: ${{ variables.PackageVersion }}
+
+pool:
+  name: Azure Pipelines
+  vmImage: 'windows-latest'
+  
+trigger:
+  batch: true
+  branches:
+    include:
+    - '*'
+pr: none
+
+stages:
+- stage: build 
+  displayName: "Build Package"
+  jobs:
+  - job: build
+
+    steps:
+    - task: NuGetToolInstaller@1
+      displayName: 'Use NuGet '
+
+    - bash: |
+       nuget restore
+      displayName: 'nuget sources add && nuget restore'
+
+    - script: 'dotnet msbuild AzDevOpsNugetVersionExample.sln -p:Configuration=Release'
+      displayName: 'Build Solution'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet pack'
+      inputs:
+        command: pack
+        packagesToPack: ExamplePackage/ExamplePackage.csproj
+        configuration: Release
+        versioningScheme: byEnvVar
+        versionEnvVar: PackageVersion
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact: drop'
+
+    - task: NuGetCommand@2
+      displayName: 'NuGet push'
+      inputs:
+        command: push
+        packagesToPush: '$(Build.ArtifactStagingDirectory)/*.nupkg'
+        nuGetFeedType: external
+        publishFeedCredentials: missing
